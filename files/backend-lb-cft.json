@@ -1,0 +1,1162 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Parameters": {
+    "EnvironmentPrefix": {
+      "Description": "Environment Prefix (e.g. preprod)",
+      "Type": "String"
+    },
+    "Scheme": {
+      "Description": "Loadbalancer scheme",
+      "Type": "String",
+      "AllowedValues": [
+        "internet-facing",
+        "internal"
+      ]
+    },
+    "HostedZoneName": {
+      "Description": "Hosted Zone Name",
+      "Type": "String",
+      "Default": "paas4sap.svcs.entsvcs.com."
+    },
+    "CertificateName": {
+      "Description": "IAM Certificate for domain: '[EnvironmentPrefix].[HostedZoneName]'",
+      "Type": "String"
+    },
+    "VpcId": {
+      "Description": "Virtual Private Cloud ID",
+      "Type": "AWS::EC2::VPC::Id"
+    },
+    "SubnetA": {
+      "Description": "Subnet in first AZ",
+      "Type": "AWS::EC2::Subnet::Id"
+    },
+    "SubnetB": {
+      "Description": "Subnet in second AZ",
+      "Type": "AWS::EC2::Subnet::Id"
+    },
+    "FrontendNodeId": {
+      "Description": "First frontend node.",
+      "Type": "AWS::EC2::Instance::Id"
+    },
+    "FrontendNodeId2": {
+      "Description": "Second frontend node.",
+      "Type": "AWS::EC2::Instance::Id"
+    },
+    "BackendNodeId": {
+      "Description": "First backend node.",
+      "Type": "AWS::EC2::Instance::Id"
+    },
+    "BackendNodeId2": {
+      "Description": "Second backend node.",
+      "Type": "AWS::EC2::Instance::Id"
+    },
+    "IdmNodeId": {
+      "Description": "First IDM node.",
+      "Type": "AWS::EC2::Instance::Id"
+    },
+    "IdmNodeId2": {
+      "Description": "Second IDM node.",
+      "Type": "AWS::EC2::Instance::Id"
+    },
+    "SecurityGroup": {
+      "Description": "Security Group.",
+      "Type": "AWS::EC2::SecurityGroup::Id"
+    }
+  },
+  "Metadata": {
+    "AWS::CloudFormation::Interface": {
+      "ParameterGroups": [
+        {
+          "Label": {
+            "default": "Names & Access Configuration"
+          },
+          "Parameters": [
+            "EnvironmentPrefix",
+            "Scheme",
+            "HostedZoneName",
+            "CertificateName"
+          ]
+        },
+        {
+          "Label": {
+            "default": "Network Configuration"
+          },
+          "Parameters": [
+            "VpcId",
+            "SubnetA",
+            "SubnetB"
+          ]
+        },
+        {
+          "Label": {
+            "default": "References Configuration"
+          },
+          "Parameters": [
+            "FrontendNodeId",
+            "FrontendNodeId2",
+            "BackendNodeId",
+            "BackendNodeId2",
+            "IdmNodeId",
+            "IdmNodeId2",
+            "SecurityGroup"
+          ]
+        }
+      ]
+    }
+  },
+  "Resources": {
+    "ApplicationLoadBalancer": {
+      "Type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+      "Properties": {
+        "Name": {
+          "Ref": "EnvironmentPrefix"
+        },
+        "Scheme": {
+          "Ref": "Scheme"
+        },
+        "Subnets": [
+          {
+            "Ref": "SubnetA"
+          },
+          {
+            "Ref": "SubnetB"
+          }
+        ],
+        "SecurityGroups": [
+          {
+            "Ref": "SecurityGroup"
+          }
+        ]
+      }
+    },
+    "ALBListener": {
+      "Type": "AWS::ElasticLoadBalancingV2::Listener",
+      "Properties": {
+        "DefaultActions": [
+          {
+            "Type": "forward",
+            "TargetGroupArn": {
+              "Ref": "TargetGroupCatalog"
+            }
+          }
+        ],
+        "LoadBalancerArn": {
+          "Ref": "ApplicationLoadBalancer"
+        },
+        "Port": "443",
+        "Protocol": "HTTPS",
+        "Certificates": [
+          {
+            "CertificateArn": {
+              "Ref": "CertificateName"
+            }
+          }
+        ]
+      }
+    },
+    "RuleIdm": {
+      "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+      "Properties": {
+        "Actions": [
+          {
+            "Type": "forward",
+            "TargetGroupArn": {
+              "Ref": "TargetGroupIdm"
+            }
+          }
+        ],
+        "Conditions": [
+          {
+            "Field": "path-pattern",
+            "Values": [
+              "/api/idm*"
+            ]
+          }
+        ],
+        "ListenerArn": {
+          "Ref": "ALBListener"
+        },
+        "Priority": 1
+      }
+    },
+    "RuleApiDoc": {
+      "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+      "Properties": {
+        "Actions": [
+          {
+            "Type": "forward",
+            "TargetGroupArn": {
+              "Ref": "TargetGroupApiDoc"
+            }
+          }
+        ],
+        "Conditions": [
+          {
+            "Field": "path-pattern",
+            "Values": [
+              "/api-doc*"
+            ]
+          }
+        ],
+        "ListenerArn": {
+          "Ref": "ALBListener"
+        },
+        "Priority": 3
+      }
+    },
+    "RuleConfig": {
+      "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+      "Properties": {
+        "Actions": [
+          {
+            "Type": "forward",
+            "TargetGroupArn": {
+              "Ref": "TargetGroupConfig"
+            }
+          }
+        ],
+        "Conditions": [
+          {
+            "Field": "path-pattern",
+            "Values": [
+              "/api/config*"
+            ]
+          }
+        ],
+        "ListenerArn": {
+          "Ref": "ALBListener"
+        },
+        "Priority": 4
+      }
+    },
+    "RuleFulfillment": {
+      "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+      "Properties": {
+        "Actions": [
+          {
+            "Type": "forward",
+            "TargetGroupArn": {
+              "Ref": "TargetGroupFulfillment"
+            }
+          }
+        ],
+        "Conditions": [
+          {
+            "Field": "path-pattern",
+            "Values": [
+              "/api/fulfillment/*"
+            ]
+          }
+        ],
+        "ListenerArn": {
+          "Ref": "ALBListener"
+        },
+        "Priority": 5
+      }
+    },
+    "RuleCatalog": {
+      "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+      "Properties": {
+        "Actions": [
+          {
+            "Type": "forward",
+            "TargetGroupArn": {
+              "Ref": "TargetGroupCatalog"
+            }
+          }
+        ],
+        "Conditions": [
+          {
+            "Field": "path-pattern",
+            "Values": [
+              "/api/catalog/*"
+            ]
+          }
+        ],
+        "ListenerArn": {
+          "Ref": "ALBListener"
+        },
+        "Priority": 6
+      }
+    },
+    "RuleBlobStore": {
+      "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+      "Properties": {
+        "Actions": [
+          {
+            "Type": "forward",
+            "TargetGroupArn": {
+              "Ref": "TargetGroupBlobStore"
+            }
+          }
+        ],
+        "Conditions": [
+          {
+            "Field": "path-pattern",
+            "Values": [
+              "/api/blob-service/*"
+            ]
+          }
+        ],
+        "ListenerArn": {
+          "Ref": "ALBListener"
+        },
+        "Priority": 7
+      }
+    },
+    "RuleCustomers": {
+      "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+      "Properties": {
+        "Actions": [
+          {
+            "Type": "forward",
+            "TargetGroupArn": {
+              "Ref": "TargetGroupCustomers"
+            }
+          }
+        ],
+        "Conditions": [
+          {
+            "Field": "path-pattern",
+            "Values": [
+              "/api/customers/*"
+            ]
+          }
+        ],
+        "ListenerArn": {
+          "Ref": "ALBListener"
+        },
+        "Priority": 8
+      }
+    },
+    "RuleEvent": {
+      "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+      "Properties": {
+        "Actions": [
+          {
+            "Type": "forward",
+            "TargetGroupArn": {
+              "Ref": "TargetGroupEvent"
+            }
+          }
+        ],
+        "Conditions": [
+          {
+            "Field": "path-pattern",
+            "Values": [
+              "/api/event/*"
+            ]
+          }
+        ],
+        "ListenerArn": {
+          "Ref": "ALBListener"
+        },
+        "Priority": 9
+      }
+    },
+    "RuleRequest": {
+      "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+      "Properties": {
+        "Actions": [
+          {
+            "Type": "forward",
+            "TargetGroupArn": {
+              "Ref": "TargetGroupRequest"
+            }
+          }
+        ],
+        "Conditions": [
+          {
+            "Field": "path-pattern",
+            "Values": [
+              "/api/request/*"
+            ]
+          }
+        ],
+        "ListenerArn": {
+          "Ref": "ALBListener"
+        },
+        "Priority": 10
+      }
+    },
+    "RuleServiceInstances": {
+      "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+      "Properties": {
+        "Actions": [
+          {
+            "Type": "forward",
+            "TargetGroupArn": {
+              "Ref": "TargetGroupServiceInstances"
+            }
+          }
+        ],
+        "Conditions": [
+          {
+            "Field": "path-pattern",
+            "Values": [
+              "/api/service-instances/*"
+            ]
+          }
+        ],
+        "ListenerArn": {
+          "Ref": "ALBListener"
+        },
+        "Priority": 11
+      }
+    },
+    "RulePricing": {
+      "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+      "Properties": {
+        "Actions": [
+          {
+            "Type": "forward",
+            "TargetGroupArn": {
+              "Ref": "TargetGroupPricing"
+            }
+          }
+        ],
+        "Conditions": [
+          {
+            "Field": "path-pattern",
+            "Values": [
+              "/api/pricing/*"
+            ]
+          }
+        ],
+        "ListenerArn": {
+          "Ref": "ALBListener"
+        },
+        "Priority": 12
+      }
+    },
+    "RuleReporting": {
+      "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+      "Properties": {
+        "Actions": [
+          {
+            "Type": "forward",
+            "TargetGroupArn": {
+              "Ref": "TargetGroupReporting"
+            }
+          }
+        ],
+        "Conditions": [
+          {
+            "Field": "path-pattern",
+            "Values": [
+              "/api/reporting/*"
+            ]
+          }
+        ],
+        "ListenerArn": {
+          "Ref": "ALBListener"
+        },
+        "Priority": 13
+      }
+    },
+    "RuleTicketing": {
+      "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+      "Properties": {
+        "Actions": [
+          {
+            "Type": "forward",
+            "TargetGroupArn": {
+              "Ref": "TargetGroupTicketing"
+            }
+          }
+        ],
+        "Conditions": [
+          {
+            "Field": "path-pattern",
+            "Values": [
+              "/api/ticketing/*"
+            ]
+          }
+        ],
+        "ListenerArn": {
+          "Ref": "ALBListener"
+        },
+        "Priority": 14
+      }
+    },
+    "RuleExport": {
+      "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+      "Properties": {
+        "Actions": [
+          {
+            "Type": "forward",
+            "TargetGroupArn": {
+              "Ref": "TargetGroupExport"
+            }
+          }
+        ],
+        "Conditions": [
+          {
+            "Field": "path-pattern",
+            "Values": [
+              "/api/export/*"
+            ]
+          }
+        ],
+        "ListenerArn": {
+          "Ref": "ALBListener"
+        },
+        "Priority": 15
+      }
+    },
+    "RuleManagementUI": {
+      "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+      "Properties": {
+        "Actions": [
+          {
+            "Type": "forward",
+            "TargetGroupArn": {
+              "Ref": "TargetGroupManagementUI"
+            }
+          }
+        ],
+        "Conditions": [
+          {
+            "Field": "path-pattern",
+            "Values": [
+              "/ui/management/*"
+            ]
+          }
+        ],
+        "ListenerArn": {
+          "Ref": "ALBListener"
+        },
+        "Priority": 16
+      }
+    },
+    "RulePortalUI": {
+      "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+      "Properties": {
+        "Actions": [
+          {
+            "Type": "forward",
+            "TargetGroupArn": {
+              "Ref": "TargetGroupPortalUI"
+            }
+          }
+        ],
+        "Conditions": [
+          {
+            "Field": "path-pattern",
+            "Values": [
+              "/ui/portal/*"
+            ]
+          }
+        ],
+        "ListenerArn": {
+          "Ref": "ALBListener"
+        },
+        "Priority": 17
+      }
+    },
+    "TargetGroupApiDoc": {
+      "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+      "Properties": {
+        "HealthCheckIntervalSeconds": 20,
+        "HealthCheckPath": "/api-doc/",
+        "Name": {
+          "Fn::Join": [
+            "",
+            [
+              {
+                "Ref": "EnvironmentPrefix"
+              },
+              "-api-doc"
+            ]
+          ]
+        },
+        "Port": 8098,
+        "Protocol": "HTTPS",
+        "VpcId": {
+          "Ref": "VpcId"
+        },
+        "Targets": [
+          {
+            "Id": {
+              "Ref": "BackendNodeId"
+            }
+          },
+          {
+            "Id": {
+              "Ref": "BackendNodeId2"
+            }
+          }
+        ]
+      }
+    },
+    "TargetGroupBlobStore": {
+      "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+      "Properties": {
+        "HealthCheckIntervalSeconds": 20,
+        "HealthCheckPath": "/system/info",
+        "Name": {
+          "Fn::Join": [
+            "",
+            [
+              {
+                "Ref": "EnvironmentPrefix"
+              },
+              "-blob-store"
+            ]
+          ]
+        },
+        "Port": 8091,
+        "Protocol": "HTTPS",
+        "VpcId": {
+          "Ref": "VpcId"
+        },
+        "Targets": [
+          {
+            "Id": {
+              "Ref": "BackendNodeId"
+            }
+          },
+          {
+            "Id": {
+              "Ref": "BackendNodeId2"
+            }
+          }
+        ]
+      }
+    },
+    "TargetGroupCatalog": {
+      "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+      "Properties": {
+        "HealthCheckIntervalSeconds": 20,
+        "HealthCheckPath": "/system/info",
+        "Name": {
+          "Fn::Join": [
+            "",
+            [
+              {
+                "Ref": "EnvironmentPrefix"
+              },
+              "-catalog"
+            ]
+          ]
+        },
+        "Port": 8093,
+        "Protocol": "HTTPS",
+        "VpcId": {
+          "Ref": "VpcId"
+        },
+        "Targets": [
+          {
+            "Id": {
+              "Ref": "BackendNodeId"
+            }
+          },
+          {
+            "Id": {
+              "Ref": "BackendNodeId2"
+            }
+          }
+        ]
+      }
+    },
+    "TargetGroupConfig": {
+      "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+      "Properties": {
+        "HealthCheckIntervalSeconds": 20,
+        "HealthCheckPath": "/system/info",
+        "Name": {
+          "Fn::Join": [
+            "",
+            [
+              {
+                "Ref": "EnvironmentPrefix"
+              },
+              "-config"
+            ]
+          ]
+        },
+        "Port": 8103,
+        "Protocol": "HTTPS",
+        "VpcId": {
+          "Ref": "VpcId"
+        },
+        "Targets": [
+          {
+            "Id": {
+              "Ref": "BackendNodeId"
+            }
+          },
+          {
+            "Id": {
+              "Ref": "BackendNodeId2"
+            }
+          }
+        ]
+      }
+    },
+    "TargetGroupCustomers": {
+      "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+      "Properties": {
+        "HealthCheckIntervalSeconds": 20,
+        "HealthCheckPath": "/system/info",
+        "Name": {
+          "Fn::Join": [
+            "",
+            [
+              {
+                "Ref": "EnvironmentPrefix"
+              },
+              "-customers"
+            ]
+          ]
+        },
+        "Port": 8090,
+        "Protocol": "HTTPS",
+        "VpcId": {
+          "Ref": "VpcId"
+        },
+        "Targets": [
+          {
+            "Id": {
+              "Ref": "BackendNodeId"
+            }
+          },
+          {
+            "Id": {
+              "Ref": "BackendNodeId2"
+            }
+          }
+        ]
+      }
+    },
+    "TargetGroupEvent": {
+      "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+      "Properties": {
+        "HealthCheckIntervalSeconds": 20,
+        "HealthCheckPath": "/system/info",
+        "Name": {
+          "Fn::Join": [
+            "",
+            [
+              {
+                "Ref": "EnvironmentPrefix"
+              },
+              "-event"
+            ]
+          ]
+        },
+        "Port": 8092,
+        "Protocol": "HTTPS",
+        "VpcId": {
+          "Ref": "VpcId"
+        },
+        "Targets": [
+          {
+            "Id": {
+              "Ref": "BackendNodeId"
+            }
+          },
+          {
+            "Id": {
+              "Ref": "BackendNodeId2"
+            }
+          }
+        ]
+      }
+    },
+    "TargetGroupExport": {
+      "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+      "Properties": {
+        "HealthCheckIntervalSeconds": 20,
+        "HealthCheckPath": "/system/info",
+        "Name": {
+          "Fn::Join": [
+            "",
+            [
+              {
+                "Ref": "EnvironmentPrefix"
+              },
+              "-export"
+            ]
+          ]
+        },
+        "Port": 8105,
+        "Protocol": "HTTPS",
+        "VpcId": {
+          "Ref": "VpcId"
+        },
+        "Targets": [
+          {
+            "Id": {
+              "Ref": "BackendNodeId"
+            }
+          },
+          {
+            "Id": {
+              "Ref": "BackendNodeId2"
+            }
+          }
+        ]
+      }
+    },
+    "TargetGroupFulfillment": {
+      "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+      "Properties": {
+        "HealthCheckIntervalSeconds": 20,
+        "HealthCheckPath": "/system/info",
+        "Name": {
+          "Fn::Join": [
+            "",
+            [
+              {
+                "Ref": "EnvironmentPrefix"
+              },
+              "-fulfillment"
+            ]
+          ]
+        },
+        "Port": 8097,
+        "Protocol": "HTTPS",
+        "VpcId": {
+          "Ref": "VpcId"
+        },
+        "Targets": [
+          {
+            "Id": {
+              "Ref": "BackendNodeId"
+            }
+          },
+          {
+            "Id": {
+              "Ref": "BackendNodeId2"
+            }
+          }
+        ]
+      }
+    },
+    "TargetGroupIdm": {
+      "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+      "Properties": {
+        "HealthCheckIntervalSeconds": 20,
+        "HealthCheckPath": "/api/idm/v3",
+        "Name": {
+          "Fn::Join": [
+            "",
+            [
+              {
+                "Ref": "EnvironmentPrefix"
+              },
+              "-idm"
+            ]
+          ]
+        },
+        "Port": 5000,
+        "Protocol": "HTTPS",
+        "VpcId": {
+          "Ref": "VpcId"
+        },
+        "Targets": [
+          {
+            "Id": {
+              "Ref": "IdmNodeId"
+            }
+          },
+          {
+            "Id": {
+              "Ref": "IdmNodeId2"
+            }
+          }
+        ]
+      }
+    },
+    "TargetGroupManagementUI": {
+      "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+      "Properties": {
+        "HealthCheckIntervalSeconds": 20,
+        "HealthCheckPath": "/ui/management",
+        "Name": {
+          "Fn::Join": [
+            "",
+            [
+              {
+                "Ref": "EnvironmentPrefix"
+              },
+              "-management-ui"
+            ]
+          ]
+        },
+        "Port": 8102,
+        "Protocol": "HTTPS",
+        "VpcId": {
+          "Ref": "VpcId"
+        },
+        "Targets": [
+          {
+            "Id": {
+              "Ref": "FrontendNodeId"
+            }
+          },
+          {
+            "Id": {
+              "Ref": "FrontendNodeId2"
+            }
+          }
+        ]
+      }
+    },
+    "TargetGroupPortalUI": {
+      "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+      "Properties": {
+        "HealthCheckIntervalSeconds": 20,
+        "HealthCheckPath": "/ui/portal",
+        "Name": {
+          "Fn::Join": [
+            "",
+            [
+              {
+                "Ref": "EnvironmentPrefix"
+              },
+              "-portal-ui"
+            ]
+          ]
+        },
+        "Port": 8202,
+        "Protocol": "HTTPS",
+        "VpcId": {
+          "Ref": "VpcId"
+        },
+        "Targets": [
+          {
+            "Id": {
+              "Ref": "FrontendNodeId"
+            }
+          },
+          {
+            "Id": {
+              "Ref": "FrontendNodeId2"
+            }
+          }
+        ]
+      }
+    },
+    "TargetGroupPricing": {
+      "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+      "Properties": {
+        "HealthCheckIntervalSeconds": 20,
+        "HealthCheckPath": "/system/info",
+        "Name": {
+          "Fn::Join": [
+            "",
+            [
+              {
+                "Ref": "EnvironmentPrefix"
+              },
+              "-pricing"
+            ]
+          ]
+        },
+        "Port": 8100,
+        "Protocol": "HTTPS",
+        "VpcId": {
+          "Ref": "VpcId"
+        },
+        "Targets": [
+          {
+            "Id": {
+              "Ref": "BackendNodeId"
+            }
+          },
+          {
+            "Id": {
+              "Ref": "BackendNodeId2"
+            }
+          }
+        ]
+      }
+    },
+    "TargetGroupReporting": {
+      "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+      "Properties": {
+        "HealthCheckIntervalSeconds": 20,
+        "HealthCheckPath": "/system/info",
+        "Name": {
+          "Fn::Join": [
+            "",
+            [
+              {
+                "Ref": "EnvironmentPrefix"
+              },
+              "-reporting"
+            ]
+          ]
+        },
+        "Port": 8099,
+        "Protocol": "HTTPS",
+        "VpcId": {
+          "Ref": "VpcId"
+        },
+        "Targets": [
+          {
+            "Id": {
+              "Ref": "BackendNodeId"
+            }
+          },
+          {
+            "Id": {
+              "Ref": "BackendNodeId2"
+            }
+          }
+        ]
+      }
+    },
+    "TargetGroupRequest": {
+      "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+      "Properties": {
+        "HealthCheckIntervalSeconds": 20,
+        "HealthCheckPath": "/system/info",
+        "Name": {
+          "Fn::Join": [
+            "",
+            [
+              {
+                "Ref": "EnvironmentPrefix"
+              },
+              "-request"
+            ]
+          ]
+        },
+        "Port": 8096,
+        "Protocol": "HTTPS",
+        "VpcId": {
+          "Ref": "VpcId"
+        },
+        "Targets": [
+          {
+            "Id": {
+              "Ref": "BackendNodeId"
+            }
+          },
+          {
+            "Id": {
+              "Ref": "BackendNodeId2"
+            }
+          }
+        ]
+      }
+    },
+    "TargetGroupServiceInstances": {
+      "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+      "Properties": {
+        "HealthCheckIntervalSeconds": 20,
+        "HealthCheckPath": "/system/info",
+        "Name": {
+          "Fn::Join": [
+            "",
+            [
+              {
+                "Ref": "EnvironmentPrefix"
+              },
+              "-svcinst"
+            ]
+          ]
+        },
+        "Port": 8094,
+        "Protocol": "HTTPS",
+        "VpcId": {
+          "Ref": "VpcId"
+        },
+        "Targets": [
+          {
+            "Id": {
+              "Ref": "BackendNodeId"
+            }
+          },
+          {
+            "Id": {
+              "Ref": "BackendNodeId2"
+            }
+          }
+        ]
+      }
+    },
+    "TargetGroupTicketing": {
+      "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+      "Properties": {
+        "HealthCheckIntervalSeconds": 20,
+        "HealthCheckPath": "/system/info",
+        "Name": {
+          "Fn::Join": [
+            "",
+            [
+              {
+                "Ref": "EnvironmentPrefix"
+              },
+              "-ticketing"
+            ]
+          ]
+        },
+        "Port": 8101,
+        "Protocol": "HTTPS",
+        "VpcId": {
+          "Ref": "VpcId"
+        },
+        "Targets": [
+          {
+            "Id": {
+              "Ref": "BackendNodeId"
+            }
+          },
+          {
+            "Id": {
+              "Ref": "BackendNodeId2"
+            }
+          }
+        ]
+      }
+    },
+    "ApplicationLoadBalancerDNSRecord": {
+      "Type": "AWS::Route53::RecordSet",
+      "Properties": {
+        "HostedZoneName": {
+          "Ref": "HostedZoneName"
+        },
+        "Comment": {
+          "Fn::Join": [
+            "",
+            [
+              "DNS name for Elastic Load Balancer ",
+              {
+                "Ref": "EnvironmentPrefix"
+              }
+            ]
+          ]
+        },
+        "Name": {
+          "Fn::Join": [
+            "",
+            [
+              "cps-sharedsvcs-",
+              {
+                "Ref": "EnvironmentPrefix"
+              },
+              ".",
+              {
+                "Ref": "HostedZoneName"
+              }
+            ]
+          ]
+        },
+        "Type": "CNAME",
+        "TTL": "300",
+        "ResourceRecords": [
+          {
+            "Fn::GetAtt": [
+              "ApplicationLoadBalancer",
+              "DNSName"
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

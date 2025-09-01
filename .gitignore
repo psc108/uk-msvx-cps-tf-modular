@@ -1,0 +1,7 @@
+*.tfvars
+!example.tfvars
+**/.terraform/*
+*.tfstate
+*.pem
+*.jar
+*.pyc

@@ -1,0 +1,70 @@
+#cloud-config
+groups:
+  - ecs
+
+users:
+  - default
+  - name: ecs
+    primary_group: ecs
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+
+package_upgrade: true
+fqdn: ${hostname}
+
+%{ if length(efs-dns-name) > 0 ~}
+mounts:
+  - [ "${efs-dns-name}:/", "/opt/scripts", "nfs4", "nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport,_netdev", "0", "0" ]
+%{ endif ~}
+
+bootcmd:
+  # Amazon Linux 2023 uses dnf by default
+  - 'echo "Amazon Linux 2023 initialization"'
+
+runcmd:
+  - mount -a
+  # Install and start SSM agent
+  - dnf install -y amazon-ssm-agent
+  - systemctl enable amazon-ssm-agent
+  - systemctl start amazon-ssm-agent
+  # Security hardening
+  - dnf update -y
+  - systemctl disable --now rpcbind
+  - systemctl disable --now nfs-server
+  - systemctl mask rpcbind nfs-server
+  # Configure automatic security updates
+  - dnf install -y dnf-automatic
+  - systemctl enable --now dnf-automatic-install.timer
+  # Install and configure CloudWatch agent
+  - dnf install -y amazon-cloudwatch-agent
+  - systemctl enable amazon-cloudwatch-agent
+  # Run security hardening
+  - /tmp/security-hardening.sh
+%{ for run_cmd in run_cmds ~}
+  - ${run_cmd}
+%{ endfor ~}
+
+packages:
+  - bash-completion
+  - bind-utils
+  - net-tools
+%{ for pkg in packages ~}
+  - ${pkg}
+%{ endfor ~}
+
+write_files:
+  - path: /tmp/security-hardening.sh
+    encoding: b64
+    content: ${security_hardening_script}
+    permissions: '0755'
+    owner: root:root
+%{ if length(files) > 0 ~}
+%{ for file in files ~}
+  - path: ${file.path}
+    encoding: b64
+    content: ${file.base64content}
+    permissions: '${file.permissions}'
+    owner: ${file.owner}
+    defer: true
+%{ endfor ~}
+%{ endif ~}
