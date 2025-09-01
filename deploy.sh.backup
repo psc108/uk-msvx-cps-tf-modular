@@ -1,0 +1,62 @@
+#!/bin/bash
+# Smart deployment script - auto-detects if S3 files need uploading
+
+WORKSPACE=$(terraform workspace show)
+BUCKET_NAME="${WORKSPACE}-cso-files"
+
+echo "Checking S3 bucket: $BUCKET_NAME"
+
+# Compare local files with S3 files by name and size
+if [ -d "files" ]; then
+    NEEDS_UPLOAD=false
+    UPLOAD_REASONS=""
+    
+    echo "Comparing local files with S3..."
+    
+    find files -type f | while read -r file; do
+        RELATIVE_PATH=${file#files/}
+        LOCAL_SIZE=$(stat -c%s "$file")
+        
+        # Get S3 file info
+        S3_INFO=$(aws s3api head-object --bucket "$BUCKET_NAME" --key "$RELATIVE_PATH" 2>/dev/null)
+        
+        if [ $? -ne 0 ]; then
+            echo "  ✗ Missing: $RELATIVE_PATH"
+            NEEDS_UPLOAD=true
+            UPLOAD_REASONS="$UPLOAD_REASONS Missing: $RELATIVE_PATH;"
+        else
+            S3_SIZE=$(echo "$S3_INFO" | jq -r '.ContentLength')
+            if [ "$S3_SIZE" != "$LOCAL_SIZE" ]; then
+                echo "  ✗ Size diff: $RELATIVE_PATH (Local: $LOCAL_SIZE, S3: $S3_SIZE)"
+                NEEDS_UPLOAD=true
+                UPLOAD_REASONS="$UPLOAD_REASONS Size diff: $RELATIVE_PATH;"
+            else
+                echo "  ✓ Match: $RELATIVE_PATH ($LOCAL_SIZE bytes)"
+            fi
+        fi
+    done
+    
+    if [ "$NEEDS_UPLOAD" = true ]; then
+        echo "Files need upload: $UPLOAD_REASONS"
+        UPLOAD_FILES="true"
+    else
+        echo "All files match - skipping upload"
+        UPLOAD_FILES="false"
+    fi
+else
+    echo "Local files directory not found - skipping upload"
+    UPLOAD_FILES="false"
+fi
+
+PLAN_FILE="${WORKSPACE}-plan.tfplan"
+
+echo "Running: terraform plan -var=\"upload_s3_files=$UPLOAD_FILES\" -out=$PLAN_FILE $@"
+terraform plan -var="upload_s3_files=$UPLOAD_FILES" -out="$PLAN_FILE" "$@"
+
+if [ $? -eq 0 ] && [ -f "$PLAN_FILE" ]; then
+    echo "Running: terraform apply -auto-approve $PLAN_FILE"
+    terraform apply -auto-approve "$PLAN_FILE"
+else
+    echo "Plan failed or plan file not created, aborting apply"
+    exit 1
+fi
