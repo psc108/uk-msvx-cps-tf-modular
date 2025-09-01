@@ -1,0 +1,9 @@
+export OS_USERNAME=admin
+export OS_PASSWORD=${keystone_password}
+export OS_PROJECT_NAME=admin
+export OS_USER_DOMAIN_NAME=Default
+export OS_PROJECT_DOMAIN_NAME=Default
+export OS_AUTH_URL=https://keystone0${count_index + 1}.${private_zone_name}:5000/api/idm/v3
+export OS_IDENTITY_API_VERSION=3
+export OS_CACERT=/etc/keystone/ca.crt
+export no_proxy=keystone0${count_index + 1}.${private_zone_name}
